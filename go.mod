@@ -4,6 +4,7 @@ go 1.17
 
 require (
 	github.com/jackc/pgx/v4 v4.13.0
+	github.com/jmoiron/sqlx v1.3.4
 	github.com/urfave/cli/v2 v2.3.0
 )
 
