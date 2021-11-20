@@ -23,7 +23,7 @@ services:
     environment:
       - DATABASE_URL=postgres://postgres:qwerty@db/kexpress
       - POOL_MODE=session
-      - MAX_CLIENT_CONN=100
+      - MAX_CLIENT_CONN=500
     expose:
       - "5432"
     depends_on:

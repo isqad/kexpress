@@ -1,0 +1,1 @@
+ALTER TABLE skus ALTER COLUMN char_value_id DROP NOT NULL;

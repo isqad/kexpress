@@ -11,6 +11,7 @@ import (
 
 	"github.com/isqad/kexpress/internal/service"
 	"github.com/jmoiron/sqlx"
+	"github.com/robfig/cron/v3"
 	"github.com/urfave/cli/v2"
 
 	_ "github.com/jackc/pgx/v4/stdlib"
@@ -50,31 +51,36 @@ func startServer(ctx *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	err = db.Ping()
-	if err != nil {
+	if err = db.Ping(); err != nil {
 		return err
 	}
 
-	// c := cron.New()
-	// c.AddFunc("*/1 * * * *", func() {
-	//		log.Println("Hello")
-	//})
-	//c.Start()
-	// err := service.LoadProduct(915181)
+	c := cron.New()
+	c.AddFunc("43 21 * * *", func() {
+		if err := service.CrawlCategories(db); err != nil {
+			log.Printf("ERROR: CrawlCategories, %v\n", err)
+		}
+	})
 
-	// err = service.LoadProductList(db, 0, 10014)
-	err = service.CrawlCategories(db)
-	if err != nil {
-		return err
-	}
-
-	log.Println("All category loaded")
+	c.AddFunc("11 01 * * *", func() {
+		if err := service.CrawlProductList(db, 5235); err != nil {
+			log.Printf("ERROR: CrawlProductList, %v\n", err)
+		}
+	})
+	c.AddFunc("11 07 * * *", func() {
+		if err := service.CrawlProducts(db, 5235); err != nil {
+			log.Printf("ERROR: CrawlProducts, %v\n", err)
+		}
+	})
+	c.Start()
+	log.Println("Crawler has been started")
 
 	signalChan := make(chan os.Signal, 1)
 	// SIGTERM is called when Ctrl+C was pressed
 	signal.Notify(signalChan, os.Interrupt, os.Kill, syscall.SIGTERM)
 	<-signalChan
 
+	//	c.Stop()
 	db.Close()
 
 	return nil
