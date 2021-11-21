@@ -14,17 +14,22 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
+const perPage = 24
+
+// ProductListResponse is response from API
 type ProductListResponse struct {
 	Error   string                     `json:"error"`
 	Payload *ProductListReponsePayload `json:"payload"`
 }
 
+// ProductListReponsePayload is payload of response from API
 type ProductListReponsePayload struct {
 	TotalProducts int              `json:"totalProducts"`
 	Products      []*ProductOfList `json:"products"`
 	AdultContent  bool             `json:"adultContent"`
 }
 
+// ProductOfList is item from list
 type ProductOfList struct {
 	PortalID         int64     `json:"productId" db:"portal_id"`
 	Title            string    `json:"title" db:"title"`
@@ -35,7 +40,7 @@ type ProductOfList struct {
 	SellPrice        float32   `json:"sellPrice" db:"-"`
 }
 
-func (p *ProductListResponse) SaveProducts(db *sqlx.DB) error {
+func (p *ProductListResponse) saveProducts(db *sqlx.DB) error {
 	if p.Error != "" {
 		return errors.New(p.Error)
 	}
@@ -46,17 +51,10 @@ VALUES (:portal_id, :title, :portal_category_id, :category_id, :rating, NOW())`,
 	return err
 }
 
-const perPage = 24
-
-var (
-	totalPages, totalProducts int
-)
-
 // CrawlProductList crawls product listings
 func CrawlProductList(db *sqlx.DB, rootCategoryID int64) error {
 	var wg sync.WaitGroup
 
-	// Fetch leaves
 	leaves, err := categoryLeaves(db, rootCategoryID)
 	if err != nil {
 		return err
@@ -65,21 +63,27 @@ func CrawlProductList(db *sqlx.DB, rootCategoryID int64) error {
 	for _, category := range leaves {
 		wg.Add(1)
 
-		c := category
+		cid := category.ID
+		pid := category.PortalID
+		title := category.Title
+		amount := category.ProductAmount
 
 		go func() {
 			defer wg.Done()
-			log.Printf("Crawl category %d: %s Products amount: %d\n", c.PortalID, c.Title, c.ProductAmount)
+			log.Printf("Crawl category %d: %s Products amount: %d\n", pid, title, amount)
+			timeout := rand.Intn(15)
+			log.Printf("Random sleep for avoid DDoS on %ds before start\n", timeout)
+			time.Sleep(time.Duration(timeout) * time.Second)
 
-			totalProducts = c.ProductAmount
-			totalPages = int(math.Ceil(float64(totalProducts) / float64(perPage)))
+			totalProducts := amount
+			totalPages := int(math.Ceil(float64(totalProducts) / float64(perPage)))
 			log.Printf("Total products: %d, Total pages: %d\n", totalProducts, totalPages)
 
-			if err = loadProductList(db, 0, c.PortalID, c.ID); err != nil {
-				log.Printf("ERROR: Error loading product list for category: #%d\n", c.ID)
+			if err := loadProductList(db, 0, pid, cid, totalPages); err != nil {
+				log.Printf("ERROR: Error loading product list for category: #%d\n", cid)
 				return
 			}
-			log.Printf("Category %d: %s has been parsed\n", c.PortalID, c.Title)
+			log.Printf("Category %d: %s has been parsed\n", pid, title)
 		}()
 	}
 
@@ -88,7 +92,7 @@ func CrawlProductList(db *sqlx.DB, rootCategoryID int64) error {
 	return nil
 }
 
-func loadProductList(db *sqlx.DB, page int, portalCategoryID int64, categoryID int64) error {
+func loadProductList(db *sqlx.DB, page int, portalCategoryID int64, categoryID int64, totalPages int) error {
 	log.Printf("Parse listing page: %d\n", page)
 
 	if totalPages > 0 && page > totalPages {
@@ -98,7 +102,7 @@ func loadProductList(db *sqlx.DB, page int, portalCategoryID int64, categoryID i
 
 	url := fmt.Sprintf("https://api.kazanexpress.ru/api/v2/main/search/product?size=%d&page=%d&categoryId=%d&sortBy=orders&order=descending", perPage, page, portalCategoryID)
 	client := &http.Client{
-		Timeout: 60 * time.Second,
+		Timeout: 120 * time.Second,
 	}
 	req, err := newRequest(url)
 
@@ -123,7 +127,7 @@ func loadProductList(db *sqlx.DB, page int, portalCategoryID int64, categoryID i
 		p.CategoryID = categoryID
 	}
 
-	err = pResponse.SaveProducts(db)
+	err = pResponse.saveProducts(db)
 	if err != nil {
 		return err
 	}
@@ -131,5 +135,5 @@ func loadProductList(db *sqlx.DB, page int, portalCategoryID int64, categoryID i
 	log.Printf("Page %d has been parsed. Sleep %ds\n", page, timeout)
 	time.Sleep(time.Duration(timeout) * time.Second)
 
-	return loadProductList(db, page+1, portalCategoryID, categoryID)
+	return loadProductList(db, page+1, portalCategoryID, categoryID, totalPages)
 }

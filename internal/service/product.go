@@ -59,6 +59,7 @@ func (p *Product) save(db *sqlx.DB) error {
 		// save chars
 		log.Printf("Saving characteristics for product: #%d %s\n", p.PortalID, p.Title)
 		for ic, c := range p.Characteristics {
+
 			charValues[ic] = make(map[int]int64)
 
 			if err := c.save(tx); err != nil {
@@ -89,17 +90,25 @@ func (p *Product) save(db *sqlx.DB) error {
 		log.Printf("Saving skuList for product: #%d %s\n", p.PortalID, p.Title)
 		for _, s := range p.SkuList {
 			s.ProductID = p.ID
-			if len(s.Characteristics) > 0 {
-				ch := s.Characteristics[0]
-				if v, ok := charValues[ch.CharIndex][ch.ValueIndex]; ok {
-					s.CharValueID = &v
-				}
-			}
 
-			err := s.save(tx)
-			if err != nil {
+			if err := s.save(tx); err != nil {
 				tx.Rollback()
 				return err
+			}
+
+			if len(s.Characteristics) > 0 {
+				for _, ch := range s.Characteristics {
+					if v, ok := charValues[ch.CharIndex][ch.ValueIndex]; ok {
+						skuCharValue := &SkuCharValue{
+							SkuID:       s.ID,
+							CharValueID: v,
+						}
+						if err := skuCharValue.save(tx); err != nil {
+							tx.Rollback()
+							return err
+						}
+					}
+				}
 			}
 		}
 	} else {
@@ -124,7 +133,7 @@ func (p *Product) save(db *sqlx.DB) error {
 	return nil
 }
 
-const BATCH_SIZE = 1000
+const batchSize = 1000
 
 // CrawlProducts crawl all not parsed products
 func CrawlProducts(db *sqlx.DB, rootCategoryID int64) error {
@@ -141,7 +150,12 @@ func CrawlProducts(db *sqlx.DB, rootCategoryID int64) error {
 		categoryID := category.ID
 		go func() {
 			defer wg.Done()
-			if err := parseProducts(db, categoryID, BATCH_SIZE); err != nil {
+
+			timeout := rand.Intn(15)
+			log.Printf("Random sleep for avoid DDoS on %ds before start\n", timeout)
+			time.Sleep(time.Duration(timeout) * time.Second)
+
+			if err := parseProducts(db, categoryID, batchSize); err != nil {
 				log.Printf("ERROR: parsing category %d failed: %v\n", categoryID, err)
 			}
 
@@ -216,7 +230,7 @@ func parseProducts(db *sqlx.DB, categoryID int64, batchSize int64) error {
 func loadProduct(portalID int64) (*Product, error) {
 	url := fmt.Sprintf("https://api.kazanexpress.ru/api/v2/product/%d", portalID)
 	client := &http.Client{
-		Timeout: 30 * time.Second,
+		Timeout: 120 * time.Second,
 	}
 	req, err := newRequest(url)
 	if err != nil {

@@ -51,6 +51,14 @@ func RootCategories(db *sqlx.DB) ([]*Category, error) {
 	return roots, nil
 }
 
+func findCategory(db *sqlx.DB, ID int64) (*Category, error) {
+	c := &Category{}
+	if err := db.Get(c, `SELECT * FROM categories WHERE id = $1 LIMIT 1`, ID); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
 // CategoryLeaves fetches leaves
 func categoryLeaves(db *sqlx.DB, rootCategoryID int64) ([]*Category, error) {
 	query := `WITH RECURSIVE t AS (
@@ -79,7 +87,7 @@ func categoryLeaves(db *sqlx.DB, rootCategoryID int64) ([]*Category, error) {
 
 func loadCategories() ([]*Category, error) {
 	client := &http.Client{
-		Timeout: 30 * time.Second,
+		Timeout: 120 * time.Second,
 	}
 	req, err := newRequest(url)
 	if err != nil {

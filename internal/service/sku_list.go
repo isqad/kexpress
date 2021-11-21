@@ -14,12 +14,14 @@ type Sku struct {
 }
 
 func (sku *Sku) save(tx *sqlx.Tx) error {
-	_, err := tx.NamedExec(`
-	INSERT INTO skus (product_id, char_value_id, available_amount, full_price, purchase_price, created_at)
-	  VALUES (:product_id, :char_value_id, :available_amount, :full_price, :purchase_price, NOW())`,
-		sku,
+	return tx.Get(&sku.ID, `
+	INSERT INTO skus (product_id, available_amount, full_price, purchase_price, created_at)
+	  VALUES ($1, $2, $3, $4, NOW()) RETURNING id`,
+		sku.ProductID,
+		sku.AvailableAmount,
+		sku.FullPrice,
+		sku.PurchasePrice,
 	)
-	return err
 }
 
 // SkuCharacteristic keeps coordinates for characteristic of SKU

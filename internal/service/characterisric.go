@@ -57,3 +57,15 @@ func (cv *CharValue) save(tx *sqlx.Tx) error {
 
 	return nil
 }
+
+type SkuCharValue struct {
+	ID          int64 `db:"id"`
+	SkuID       int64 `db:"sku_id"`
+	CharValueID int64 `db:"char_value_id"`
+}
+
+func (s *SkuCharValue) save(tx *sqlx.Tx) error {
+	_, err := tx.NamedExec(`INSERT INTO sku_char_values
+      (sku_id, char_value_id) VALUES (:sku_id, :char_value_id)`, s)
+	return err
+}
