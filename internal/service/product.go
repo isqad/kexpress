@@ -1,12 +1,15 @@
 package service
 
 import (
+	"crypto/md5"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"math/rand"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,6 +48,62 @@ type Product struct {
 	CreatedAt            time.Time         `json:"-" db:"created_at"`
 	Characteristics      []*Characteristic `json:"characteristics" db:"-"`
 	SkuList              []*Sku            `json:"skuList" db:"-"`
+	Fingerprint          string            `json:"-" db:"fingerprint"`
+}
+
+func (p *Product) calcFingerprint() {
+	var sb strings.Builder
+	if len(p.Characteristics) > 0 {
+		for _, c := range p.Characteristics {
+			sb.WriteString("character:")
+			sb.WriteString(c.Title)
+			if len(c.Values) == 0 {
+				continue
+			}
+			sb.WriteString("|")
+
+			for _, cv := range c.Values {
+				sb.WriteString("char_value:")
+				sb.WriteString(cv.Title)
+				sb.WriteString("|")
+				sb.WriteString(cv.Value)
+			}
+			sb.WriteString("|")
+		}
+	}
+
+	if len(p.SkuList) > 0 {
+		sb.WriteString("skuList:")
+		for _, s := range p.SkuList {
+			sb.WriteString(fmt.Sprintf("%d;%.2f;%.2f", s.AvailableAmount, s.FullPrice, s.PurchasePrice))
+			sb.WriteString("|")
+		}
+	}
+
+	productStr := fmt.Sprintf(
+		"descr:%s|rating:%.2f|orders:%d|avail:%d|sku:%s",
+		*p.Description, p.Rating, p.OrdersAmount, p.TotalAvailableAmount, sb.String(),
+	)
+
+	p.Fingerprint = fmt.Sprintf("%x", md5.Sum([]byte(productStr)))
+}
+
+func (p *Product) fingerprintExists(db *sqlx.DB) (bool, error) {
+	var e int
+	err := db.Get(&e, `SELECT 1 FROM products WHERE fingerprint = $1 AND id != $2 LIMIT 1`, p.Fingerprint, p.ID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
+}
+
+func (p *Product) remove(db *sqlx.DB) error {
+	_, err := db.Exec(`DELETE FROM products WHERE id = $1`, p.ID)
+	return err
 }
 
 func (p *Product) save(db *sqlx.DB) error {
@@ -123,6 +182,7 @@ func (p *Product) save(db *sqlx.DB) error {
 	  category_title = :category_title,
 	  seller_title = :seller_title,
 	  description = :description,
+	  fingerprint = :fingerprint,
 	  parsed_at = NOW() WHERE id = :id`
 	if _, err := tx.NamedExec(query, p); err != nil {
 		tx.Rollback()
@@ -202,7 +262,6 @@ func parseProducts(db *sqlx.DB, categoryID int64, batchSize int64) error {
 		}
 
 		// Handle batch
-		// TODO: use channels and goroutines
 		for _, product := range products {
 			p, err := loadProduct(product.PortalID)
 			if err != nil {
@@ -211,12 +270,29 @@ func parseProducts(db *sqlx.DB, categoryID int64, batchSize int64) error {
 			}
 			p.ID = product.ID
 			log.Printf("Product loaded: %+v\n", p)
+
+			p.calcFingerprint()
+			log.Printf("Check fingerprint: %s\n", p.Fingerprint)
+			exists, err := p.fingerprintExists(db)
+			if err != nil {
+				log.Printf("ERROR: Saving product failed: %v\n", err)
+				continue
+			}
+
+			if exists {
+				log.Printf("INFO: fingerprint exists: %s, remove duplicate\n", p.Fingerprint)
+				if err := p.remove(db); err != nil {
+					log.Printf("ERROR: Deleting product failed: %v\n", err)
+				}
+				continue
+			}
+
 			if err = p.save(db); err != nil {
-				log.Printf("Saving product failed: %v\n", err)
+				log.Printf("ERROR: Saving product failed: %v\n", err)
 				continue
 			}
 			// We will respect the server
-			timeout := rand.Intn(7)
+			timeout := rand.Intn(5)
 			log.Printf("Product %s has been parsed. Sleep %ds\n", p.Title, timeout)
 			time.Sleep(time.Duration(timeout) * time.Second)
 		}

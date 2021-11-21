@@ -131,7 +131,7 @@ func loadProductList(db *sqlx.DB, page int, portalCategoryID int64, categoryID i
 	if err != nil {
 		return err
 	}
-	timeout := rand.Intn(15)
+	timeout := rand.Intn(7)
 	log.Printf("Page %d has been parsed. Sleep %ds\n", page, timeout)
 	time.Sleep(time.Duration(timeout) * time.Second)
 
