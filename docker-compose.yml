@@ -1,6 +1,20 @@
 version: '3'
 
 services:
+  check_backup_db:
+    image: postgres:11-alpine
+    environment:
+      - POSTGRES_DB=kexpress
+      - POSTGRES_PASSWORD=qwerty
+      - POSTGRES_USER=postgres
+    volumes:
+      - ./db/backups/latest:/docker-entrypoint-initdb.d:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "2"
+
   db:
     image: postgres:11-alpine
     environment:

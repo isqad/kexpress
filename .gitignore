@@ -1,3 +1,9 @@
 log/*
 cmd/bin/*
+*.sql.gz
+*.sql
+*.csv
+*.xls
+*.xlsx
+*.bak
 !.gitkeep

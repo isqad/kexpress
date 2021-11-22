@@ -109,14 +109,6 @@ func (p *Product) remove(db *sqlx.DB) error {
 func (p *Product) save(db *sqlx.DB) error {
 	// check before
 	var exist int
-	if err := db.Get(&exist, `SELECT 1 FROM products WHERE id = $1 AND parsed_at IS NULL LIMIT 1`, p.ID); err != nil {
-		if err == sql.ErrNoRows {
-			log.Printf("Product %d already parsed\n", p.ID)
-			return nil
-		}
-		return err
-	}
-
 	// p.CategoryTitle = &p.Category.Title
 	p.SellerID = &p.Seller.PortalID
 	p.SellerTitle = &p.Seller.Title
@@ -124,6 +116,7 @@ func (p *Product) save(db *sqlx.DB) error {
 	tx := db.MustBegin()
 	if err := tx.Get(&exist, `SELECT 1 FROM products WHERE id = $1 LIMIT 1 FOR UPDATE NOWAIT`, p.ID); err != nil {
 		if err == sql.ErrNoRows {
+			log.Printf("ERROR: NOWAIT: Product %d already parsed\n", p.ID)
 			return nil
 		}
 		tx.Rollback()
@@ -213,6 +206,11 @@ func (p *Product) save(db *sqlx.DB) error {
 
 const batchSize = 100
 
+type parseError struct {
+	Error      error
+	CategoryID int64
+}
+
 // CrawlProducts crawl all not parsed products
 func CrawlProducts(db *sqlx.DB, rootCategoryID int64) error {
 	var wg sync.WaitGroup
@@ -222,35 +220,45 @@ func CrawlProducts(db *sqlx.DB, rootCategoryID int64) error {
 		return err
 	}
 
-	for _, category := range leaves {
-		wg.Add(1)
+	workerPoolSize := 100
 
-		categoryID := category.ID
+	dataCh := make(chan int64, workerPoolSize)
+
+	for i := 0; i < workerPoolSize; i++ {
+		wg.Add(1)
 		go func() {
 			defer wg.Done()
 
-			timeout := rand.Intn(15)
-			log.Printf("Random sleep for avoid DDoS on %ds before start\n", timeout)
-			time.Sleep(time.Duration(timeout) * time.Second)
-
-			if err := parseProducts(db, categoryID, batchSize); err != nil {
-				log.Printf("ERROR: parsing category %d failed: %v\n", categoryID, err)
+			for categoryID := range dataCh {
+				log.Printf("INFO: got category %d to parse\n", categoryID)
+				if err := parseProducts(db, categoryID, batchSize); err != nil {
+					log.Printf("ERROR: category %d, err: %v\n", categoryID, err)
+					continue
+				}
+				log.Printf("INFO: category %d parsed successfully!\n", categoryID)
 			}
 
-			log.Printf("INFO: category %d parsed successfully!\n", categoryID)
 		}()
+	}
 
+	for _, category := range leaves {
+		categoryID := category.ID
+		dataCh <- categoryID
 	}
 
 	wg.Wait()
+
+	close(dataCh)
 
 	return nil
 }
 
 // ParseProducts parses products from category
 func parseProducts(db *sqlx.DB, categoryID int64, batchSize int64) error {
+	var wg sync.WaitGroup
+
 	minMaxIDQuery := `SELECT MIN(id) AS min_id, MAX(id) AS max_id FROM products
-	  WHERE parsed_at IS NULL AND category_id = $1`
+	  WHERE parsed_at IS NULL AND category_id = $1 LIMIT 1`
 
 	minMaxID := &struct {
 		MinID *int64 `db:"min_id"`
@@ -267,12 +275,71 @@ func parseProducts(db *sqlx.DB, categoryID int64, batchSize int64) error {
 	}
 
 	if minMaxID.MinID == nil {
-		log.Printf("INFO: No unparsed products for category #%d\n", categoryID)
 		return nil
 	}
 
-	query := `SELECT portal_id, id FROM products WHERE id BETWEEN $1 AND $2 AND parsed_at IS NULL AND category_id = $3`
-	products := []*Product{}
+	workerPoolSize := 2
+	dataCh := make(chan *Product, batchSize)
+
+	for i := 0; i < workerPoolSize; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			for product := range dataCh {
+				var exist int
+				if err := db.Get(&exist, `SELECT 1 FROM products WHERE id = $1 AND parsed_at IS NULL LIMIT 1`, product.ID); err != nil {
+					if err == sql.ErrNoRows {
+						log.Printf("ERROR: CHECKED: Product %d already parsed\n", product.ID)
+						continue
+					}
+					log.Printf("ERROR: Load product failed: %v\n", err)
+					continue
+				}
+
+				p, err := loadProduct(product.PortalID)
+				if err != nil {
+					log.Printf("ERROR: Load product failed: %v\n", err)
+					continue
+				}
+				p.ID = product.ID
+				log.Printf("INFO: Product loaded: %+v\n", p)
+
+				p.calcFingerprint()
+				log.Printf("INFO: Check fingerprint: %s\n", p.Fingerprint)
+				exists, err := p.fingerprintExists(db)
+				if err != nil {
+					log.Printf("ERROR: Saving product failed: %v\n", err)
+					continue
+				}
+
+				if exists {
+					log.Printf("INFO: fingerprint exists: %s, remove duplicate\n", p.Fingerprint)
+					if err := p.remove(db); err != nil {
+						log.Printf("ERROR: Deleting product failed: %v\n", err)
+					}
+					continue
+				}
+
+				if err = p.save(db); err != nil {
+					log.Printf("ERROR: Saving product failed: %v\n", err)
+					continue
+				}
+				timeout := rand.Intn(2)
+				log.Printf("Product %d has been parsed. Sleep %ds\n", product.ID, timeout)
+				time.Sleep(time.Duration(timeout) * time.Second)
+			}
+
+		}()
+	}
+
+	query := `SELECT portal_id, id
+	  FROM products
+	  WHERE id BETWEEN $1 AND $2
+	  AND session_id > 0
+	  AND NOW()::date - to_timestamp(session_id / 1000000000)::date <= 1
+	  AND parsed_at IS NULL
+	  AND category_id = $3 ORDER BY id ASC`
 	startBatch := *minMaxID.MinID
 
 	log.Printf("Start parse products for category_id: %d, min_id: %d, max_id: %d\n",
@@ -280,59 +347,20 @@ func parseProducts(db *sqlx.DB, categoryID int64, batchSize int64) error {
 
 	for startBatch <= *minMaxID.MaxID {
 		nextID := startBatch + batchSize
+		products := []*Product{}
 		if err := db.Select(&products, query, startBatch, nextID, categoryID); err != nil {
 			return err
 		}
 
-		// FIXME: filter before
-		var exist int
-		// Handle batch
 		for _, product := range products {
-			// FIXME: can we filter by one query out of the loop?
-			if err := db.Get(&exist, `SELECT 1 FROM products WHERE portal_id = $1 AND parsed_at IS NULL LIMIT 1`, product.PortalID); err != nil {
-				if err == sql.ErrNoRows {
-					continue
-				}
-				return err
-			}
-
-			p, err := loadProduct(product.PortalID)
-			if err != nil {
-				log.Printf("Load product failed: %v\n", err)
-				continue
-			}
-			p.ID = product.ID
-			log.Printf("Product loaded: %+v\n", p)
-
-			p.calcFingerprint()
-			log.Printf("Check fingerprint: %s\n", p.Fingerprint)
-			exists, err := p.fingerprintExists(db)
-			if err != nil {
-				log.Printf("ERROR: Saving product failed: %v\n", err)
-				continue
-			}
-
-			if exists {
-				log.Printf("INFO: fingerprint exists: %s, remove duplicate\n", p.Fingerprint)
-				if err := p.remove(db); err != nil {
-					log.Printf("ERROR: Deleting product failed: %v\n", err)
-				}
-				continue
-			}
-
-			if err = p.save(db); err != nil {
-				log.Printf("ERROR: Saving product failed: %v\n", err)
-				continue
-			}
-			// We will respect the server
-			timeout := rand.Intn(5)
-			log.Printf("Product %s has been parsed. Sleep %ds\n", p.Title, timeout)
-			time.Sleep(time.Duration(timeout) * time.Second)
+			dataCh <- product
 		}
 
 		startBatch = nextID
 	}
 
+	wg.Wait()
+	close(dataCh)
 	log.Printf("INFO: all products from category %d has been loaded\n", categoryID)
 
 	return nil

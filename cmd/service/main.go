@@ -122,7 +122,12 @@ func startServer(ctx *cli.Context) error {
 		}
 	})
 	c.Start()
+
 	log.Println("Crawler has been started")
+	if err := service.CrawlProducts(db, 5087); err != nil {
+		log.Printf("ERROR: CrawlProductList, %v\n", err)
+	}
+	log.Println("DONE")
 
 	signalChan := make(chan os.Signal, 1)
 	// SIGTERM is called when Ctrl+C was pressed
