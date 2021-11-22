@@ -65,6 +65,7 @@ func startServer(ctx *cli.Context) error {
 		if err := service.CrawlProducts(db, 5235); err != nil {
 			log.Printf("ERROR: CrawlProducts, %v\n", err)
 		}
+		log.Println("DONE")
 	})
 	// для взрослых
 	c.AddFunc("16 22 * * *", func() {
@@ -76,6 +77,7 @@ func startServer(ctx *cli.Context) error {
 		if err := service.CrawlProducts(db, 7304); err != nil {
 			log.Printf("ERROR: CrawlProducts, %v\n", err)
 		}
+		log.Println("DONE")
 	})
 	// Спорт и отдых
 	c.AddFunc("11 0 * * *", func() {
@@ -87,6 +89,7 @@ func startServer(ctx *cli.Context) error {
 		if err := service.CrawlProducts(db, 7331); err != nil {
 			log.Printf("ERROR: CrawlProducts, %v\n", err)
 		}
+		log.Println("DONE")
 	})
 	// Товары для дома
 	c.AddFunc("41 1 * * *", func() {
@@ -98,6 +101,7 @@ func startServer(ctx *cli.Context) error {
 		if err := service.CrawlProducts(db, 6260); err != nil {
 			log.Printf("ERROR: CrawlProducts, %v\n", err)
 		}
+		log.Println("DONE")
 	})
 	// Книги 7954
 	c.AddFunc("37 7 * * *", func() {
@@ -109,6 +113,7 @@ func startServer(ctx *cli.Context) error {
 		if err := service.CrawlProducts(db, 7954); err != nil {
 			log.Printf("ERROR: CrawlProducts, %v\n", err)
 		}
+		log.Println("DONE")
 	})
 	// красота 5919
 	c.AddFunc("37 4 * * *", func() {
@@ -120,14 +125,29 @@ func startServer(ctx *cli.Context) error {
 		if err := service.CrawlProducts(db, 5919); err != nil {
 			log.Printf("ERROR: CrawlProducts, %v\n", err)
 		}
+		log.Println("DONE")
+	})
+	// Бытовая техника
+	c.AddFunc("45 17 * * *", func() {
+		if err := service.CrawlProductList(db, 5087); err != nil {
+			log.Printf("ERROR: CrawlProductList, %v\n", err)
+		}
+		if err := service.CrawlProducts(db, 5087); err != nil {
+			log.Printf("ERROR: CrawlProductList, %v\n", err)
+		}
+		log.Println("DONE")
+	})
+	// Зоотовары
+	c.AddFunc("47 18 * * *", func() {
+		if err := service.CrawlProductList(db, 7827); err != nil {
+			log.Printf("ERROR: CrawlProductList, %v\n", err)
+		}
+		if err := service.CrawlProducts(db, 7827); err != nil {
+			log.Printf("ERROR: CrawlProductList, %v\n", err)
+		}
+		log.Println("DONE")
 	})
 	c.Start()
-
-	log.Println("Crawler has been started")
-	if err := service.CrawlProducts(db, 5087); err != nil {
-		log.Printf("ERROR: CrawlProductList, %v\n", err)
-	}
-	log.Println("DONE")
 
 	signalChan := make(chan os.Signal, 1)
 	// SIGTERM is called when Ctrl+C was pressed

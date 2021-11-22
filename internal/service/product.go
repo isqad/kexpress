@@ -358,16 +358,16 @@ func parseProducts(db *sqlx.DB, categoryID int64, batchSize int64) error {
 
 		startBatch = nextID
 	}
+	close(dataCh)
 
 	wg.Wait()
-	close(dataCh)
+
 	log.Printf("INFO: all products from category %d has been loaded\n", categoryID)
 
 	return nil
 }
 
 func loadProduct(portalID int64) (*Product, error) {
-
 	url := fmt.Sprintf("https://api.kazanexpress.ru/api/v2/product/%d", portalID)
 	client := &http.Client{
 		Timeout: 120 * time.Second,

@@ -64,38 +64,40 @@ func (p *ProductListResponse) saveProducts(db *sqlx.DB) error {
 func CrawlProductList(db *sqlx.DB, rootCategoryID int64) error {
 	sessionID := time.Now().UnixNano()
 	var wg sync.WaitGroup
+	workerPoolSize := 100
+
+	dataCh := make(chan *Category, workerPoolSize)
 
 	leaves, err := categoryLeaves(db, rootCategoryID)
 	if err != nil {
 		return err
 	}
-
-	for _, category := range leaves {
+	for i := 0; i < workerPoolSize; i++ {
 		wg.Add(1)
-
-		cid := category.ID
-		pid := category.PortalID
-		title := category.Title
-		amount := category.ProductAmount
-
 		go func() {
 			defer wg.Done()
-			log.Printf("Crawl category %d: %s Products amount: %d\n", pid, title, amount)
-			timeout := rand.Intn(15)
-			log.Printf("Random sleep for avoid DDoS on %ds before start\n", timeout)
-			time.Sleep(time.Duration(timeout) * time.Second)
+			for category := range dataCh {
+				log.Printf("INFO: got category %d to load\n", category.ID)
+				cid := category.ID
+				pid := category.PortalID
+				amount := category.ProductAmount
+				totalProducts := amount
+				totalPages := int(math.Ceil(float64(totalProducts) / float64(perPage)))
+				log.Printf("INFO: category: %d, Total products: %d, Total pages: %d\n", cid, totalProducts, totalPages)
 
-			totalProducts := amount
-			totalPages := int(math.Ceil(float64(totalProducts) / float64(perPage)))
-			log.Printf("Total products: %d, Total pages: %d\n", totalProducts, totalPages)
-
-			if err := loadProductList(db, sessionID, 0, pid, cid, totalPages); err != nil {
-				log.Printf("ERROR: Error loading product list for category: #%d\n", cid)
-				return
+				if err := loadProductList(db, sessionID, 0, pid, cid, totalPages); err != nil {
+					log.Printf("ERROR: Error loading product list for category: #%d\n", cid)
+					return
+				}
+				log.Printf("INFO: category %d loaded successfully!\n", category.ID)
 			}
-			log.Printf("Category %d: %s has been parsed\n", pid, title)
 		}()
 	}
+
+	for _, category := range leaves {
+		dataCh <- category
+	}
+	close(dataCh)
 
 	wg.Wait()
 
