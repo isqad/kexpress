@@ -38,6 +38,7 @@ type ProductOfList struct {
 	Rating           float32   `json:"rating" db:"rating"`
 	CreatedAt        time.Time `json:"-" db:"created_at"`
 	SellPrice        float32   `json:"sellPrice" db:"-"`
+	SessionID        int64     `json:"-" db:"session_id"`
 }
 
 func (p *ProductListResponse) saveProducts(db *sqlx.DB) error {
@@ -45,14 +46,23 @@ func (p *ProductListResponse) saveProducts(db *sqlx.DB) error {
 		return errors.New(p.Error)
 	}
 
-	_, err := db.NamedExec(`INSERT INTO products (portal_id, title, portal_category_id, category_id, rating, created_at)
-VALUES (:portal_id, :title, :portal_category_id, :category_id, :rating, NOW())`, p.Payload.Products)
+	tx := db.MustBegin()
+	for _, p := range p.Payload.Products {
+		_, err := tx.NamedExec(`INSERT INTO products (portal_id, title, portal_category_id, category_id, rating, session_id, created_at)
+		VALUES (:portal_id, :title, :portal_category_id, :category_id, :rating, :session_id, NOW())
+		ON CONFLICT ON CONSTRAINT uniq_portal_id_session_id_products DO NOTHING`, p)
 
-	return err
+		if err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // CrawlProductList crawls product listings
 func CrawlProductList(db *sqlx.DB, rootCategoryID int64) error {
+	sessionID := time.Now().UnixNano()
 	var wg sync.WaitGroup
 
 	leaves, err := categoryLeaves(db, rootCategoryID)
@@ -79,7 +89,7 @@ func CrawlProductList(db *sqlx.DB, rootCategoryID int64) error {
 			totalPages := int(math.Ceil(float64(totalProducts) / float64(perPage)))
 			log.Printf("Total products: %d, Total pages: %d\n", totalProducts, totalPages)
 
-			if err := loadProductList(db, 0, pid, cid, totalPages); err != nil {
+			if err := loadProductList(db, sessionID, 0, pid, cid, totalPages); err != nil {
 				log.Printf("ERROR: Error loading product list for category: #%d\n", cid)
 				return
 			}
@@ -92,7 +102,7 @@ func CrawlProductList(db *sqlx.DB, rootCategoryID int64) error {
 	return nil
 }
 
-func loadProductList(db *sqlx.DB, page int, portalCategoryID int64, categoryID int64, totalPages int) error {
+func loadProductList(db *sqlx.DB, sessID int64, page int, portalCategoryID int64, categoryID int64, totalPages int) error {
 	log.Printf("Parse listing page: %d\n", page)
 
 	if totalPages > 0 && page > totalPages {
@@ -125,6 +135,7 @@ func loadProductList(db *sqlx.DB, page int, portalCategoryID int64, categoryID i
 	}
 	for _, p := range pResponse.Payload.Products {
 		p.CategoryID = categoryID
+		p.SessionID = sessID
 	}
 
 	err = pResponse.saveProducts(db)
@@ -135,5 +146,5 @@ func loadProductList(db *sqlx.DB, page int, portalCategoryID int64, categoryID i
 	log.Printf("Page %d has been parsed. Sleep %ds\n", page, timeout)
 	time.Sleep(time.Duration(timeout) * time.Second)
 
-	return loadProductList(db, page+1, portalCategoryID, categoryID, totalPages)
+	return loadProductList(db, sessID, page+1, portalCategoryID, categoryID, totalPages)
 }

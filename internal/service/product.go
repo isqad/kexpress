@@ -81,8 +81,8 @@ func (p *Product) calcFingerprint() {
 	}
 
 	productStr := fmt.Sprintf(
-		"descr:%s|rating:%.2f|orders:%d|avail:%d|sku:%s",
-		*p.Description, p.Rating, p.OrdersAmount, p.TotalAvailableAmount, sb.String(),
+		"id:%d|descr:%s|rating:%.2f|orders:%d|avail:%d|sku:%s",
+		p.PortalID, *p.Description, p.Rating, p.OrdersAmount, p.TotalAvailableAmount, sb.String(),
 	)
 
 	p.Fingerprint = fmt.Sprintf("%x", md5.Sum([]byte(productStr)))
@@ -107,11 +107,29 @@ func (p *Product) remove(db *sqlx.DB) error {
 }
 
 func (p *Product) save(db *sqlx.DB) error {
-	p.CategoryTitle = &p.Category.Title
+	// check before
+	var exist int
+	if err := db.Get(&exist, `SELECT 1 FROM products WHERE id = $1 AND parsed_at IS NULL LIMIT 1`, p.ID); err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("Product %d already parsed\n", p.ID)
+			return nil
+		}
+		return err
+	}
+
+	// p.CategoryTitle = &p.Category.Title
 	p.SellerID = &p.Seller.PortalID
 	p.SellerTitle = &p.Seller.Title
 	// Start a new transaction
 	tx := db.MustBegin()
+	if err := tx.Get(&exist, `SELECT 1 FROM products WHERE id = $1 LIMIT 1 FOR UPDATE NOWAIT`, p.ID); err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		tx.Rollback()
+		return err
+	}
+
 	charValues := make(map[int]map[int]int64)
 
 	if len(p.Characteristics) > 0 {
@@ -193,7 +211,7 @@ func (p *Product) save(db *sqlx.DB) error {
 	return nil
 }
 
-const batchSize = 1000
+const batchSize = 100
 
 // CrawlProducts crawl all not parsed products
 func CrawlProducts(db *sqlx.DB, rootCategoryID int64) error {
@@ -240,6 +258,11 @@ func parseProducts(db *sqlx.DB, categoryID int64, batchSize int64) error {
 	}{}
 
 	if err := db.Get(minMaxID, minMaxIDQuery, categoryID); err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("INFO: No unparsed products for category #%d\n", categoryID)
+			return nil
+
+		}
 		return err
 	}
 
@@ -248,12 +271,12 @@ func parseProducts(db *sqlx.DB, categoryID int64, batchSize int64) error {
 		return nil
 	}
 
-	log.Printf("Start parse products for category_id: %d, min_id: %d, max_id: %d\n",
-		categoryID, minMaxID.MinID, minMaxID.MaxID)
-
 	query := `SELECT portal_id, id FROM products WHERE id BETWEEN $1 AND $2 AND parsed_at IS NULL AND category_id = $3`
 	products := []*Product{}
 	startBatch := *minMaxID.MinID
+
+	log.Printf("Start parse products for category_id: %d, min_id: %d, max_id: %d\n",
+		categoryID, startBatch, *minMaxID.MaxID)
 
 	for startBatch <= *minMaxID.MaxID {
 		nextID := startBatch + batchSize
@@ -261,8 +284,18 @@ func parseProducts(db *sqlx.DB, categoryID int64, batchSize int64) error {
 			return err
 		}
 
+		// FIXME: filter before
+		var exist int
 		// Handle batch
 		for _, product := range products {
+			// FIXME: can we filter by one query out of the loop?
+			if err := db.Get(&exist, `SELECT 1 FROM products WHERE portal_id = $1 AND parsed_at IS NULL LIMIT 1`, product.PortalID); err != nil {
+				if err == sql.ErrNoRows {
+					continue
+				}
+				return err
+			}
+
 			p, err := loadProduct(product.PortalID)
 			if err != nil {
 				log.Printf("Load product failed: %v\n", err)
@@ -300,10 +333,13 @@ func parseProducts(db *sqlx.DB, categoryID int64, batchSize int64) error {
 		startBatch = nextID
 	}
 
+	log.Printf("INFO: all products from category %d has been loaded\n", categoryID)
+
 	return nil
 }
 
 func loadProduct(portalID int64) (*Product, error) {
+
 	url := fmt.Sprintf("https://api.kazanexpress.ru/api/v2/product/%d", portalID)
 	client := &http.Client{
 		Timeout: 120 * time.Second,

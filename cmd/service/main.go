@@ -56,16 +56,68 @@ func startServer(ctx *cli.Context) error {
 	}
 
 	c := cron.New()
-	c.AddFunc("03 18 * * *", func() {
-		if err := service.CrawlCategories(db); err != nil {
-			log.Printf("ERROR: CrawlCategories, %v\n", err)
-		}
+	c.AddFunc("07 20 * * *", func() {
 		if err := service.CrawlProductList(db, 5235); err != nil {
 			log.Printf("ERROR: CrawlProductList, %v\n", err)
 		}
 
 		log.Println("INFO: Run crawl products")
 		if err := service.CrawlProducts(db, 5235); err != nil {
+			log.Printf("ERROR: CrawlProducts, %v\n", err)
+		}
+	})
+	// для взрослых
+	c.AddFunc("16 22 * * *", func() {
+		if err := service.CrawlProductList(db, 7304); err != nil {
+			log.Printf("ERROR: CrawlProductList, %v\n", err)
+		}
+
+		log.Println("INFO: Run crawl products")
+		if err := service.CrawlProducts(db, 7304); err != nil {
+			log.Printf("ERROR: CrawlProducts, %v\n", err)
+		}
+	})
+	// Спорт и отдых
+	c.AddFunc("11 0 * * *", func() {
+		if err := service.CrawlProductList(db, 7331); err != nil {
+			log.Printf("ERROR: CrawlProductList, %v\n", err)
+		}
+
+		log.Println("INFO: Run crawl products")
+		if err := service.CrawlProducts(db, 7331); err != nil {
+			log.Printf("ERROR: CrawlProducts, %v\n", err)
+		}
+	})
+	// Товары для дома
+	c.AddFunc("41 1 * * *", func() {
+		if err := service.CrawlProductList(db, 6260); err != nil {
+			log.Printf("ERROR: CrawlProductList, %v\n", err)
+		}
+
+		log.Println("INFO: Run crawl products")
+		if err := service.CrawlProducts(db, 6260); err != nil {
+			log.Printf("ERROR: CrawlProducts, %v\n", err)
+		}
+	})
+	// Книги 7954
+	c.AddFunc("37 7 * * *", func() {
+		if err := service.CrawlProductList(db, 7954); err != nil {
+			log.Printf("ERROR: CrawlProductList, %v\n", err)
+		}
+
+		log.Println("INFO: Run crawl products")
+		if err := service.CrawlProducts(db, 7954); err != nil {
+			log.Printf("ERROR: CrawlProducts, %v\n", err)
+		}
+	})
+	// красота 5919
+	c.AddFunc("37 4 * * *", func() {
+		if err := service.CrawlProductList(db, 5919); err != nil {
+			log.Printf("ERROR: CrawlProductList, %v\n", err)
+		}
+
+		log.Println("INFO: Run crawl products")
+		if err := service.CrawlProducts(db, 5919); err != nil {
 			log.Printf("ERROR: CrawlProducts, %v\n", err)
 		}
 	})
