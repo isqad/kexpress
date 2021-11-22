@@ -245,10 +245,9 @@ func CrawlProducts(db *sqlx.DB, rootCategoryID int64) error {
 		categoryID := category.ID
 		dataCh <- categoryID
 	}
+	close(dataCh)
 
 	wg.Wait()
-
-	close(dataCh)
 
 	return nil
 }
