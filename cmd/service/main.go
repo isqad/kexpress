@@ -56,7 +56,8 @@ func startServer(ctx *cli.Context) error {
 	}
 
 	c := cron.New()
-	c.AddFunc("07 20 * * *", func() {
+	// Одежда
+	c.AddFunc("11 0 * * *", func() {
 		if err := service.CrawlProductList(db, 5235); err != nil {
 			log.Printf("ERROR: CrawlProductList, %v\n", err)
 		}
@@ -68,7 +69,7 @@ func startServer(ctx *cli.Context) error {
 		log.Println("DONE")
 	})
 	// для взрослых
-	c.AddFunc("16 22 * * *", func() {
+	c.AddFunc("19 2 * * *", func() {
 		if err := service.CrawlProductList(db, 7304); err != nil {
 			log.Printf("ERROR: CrawlProductList, %v\n", err)
 		}
@@ -80,7 +81,7 @@ func startServer(ctx *cli.Context) error {
 		log.Println("DONE")
 	})
 	// Спорт и отдых
-	c.AddFunc("11 0 * * *", func() {
+	c.AddFunc("11 3 * * *", func() {
 		if err := service.CrawlProductList(db, 7331); err != nil {
 			log.Printf("ERROR: CrawlProductList, %v\n", err)
 		}
@@ -92,7 +93,7 @@ func startServer(ctx *cli.Context) error {
 		log.Println("DONE")
 	})
 	// Товары для дома
-	c.AddFunc("41 1 * * *", func() {
+	c.AddFunc("13 4 * * *", func() {
 		if err := service.CrawlProductList(db, 6260); err != nil {
 			log.Printf("ERROR: CrawlProductList, %v\n", err)
 		}
@@ -103,20 +104,20 @@ func startServer(ctx *cli.Context) error {
 		}
 		log.Println("DONE")
 	})
-	// Книги 7954
-	c.AddFunc("37 7 * * *", func() {
-		if err := service.CrawlProductList(db, 7954); err != nil {
+	// Акссесуары
+	c.AddFunc("11 6 * * *", func() {
+		if err := service.CrawlProductList(db, 5675); err != nil {
 			log.Printf("ERROR: CrawlProductList, %v\n", err)
 		}
 
 		log.Println("INFO: Run crawl products")
-		if err := service.CrawlProducts(db, 7954); err != nil {
+		if err := service.CrawlProducts(db, 5675); err != nil {
 			log.Printf("ERROR: CrawlProducts, %v\n", err)
 		}
 		log.Println("DONE")
 	})
 	// красота 5919
-	c.AddFunc("37 4 * * *", func() {
+	c.AddFunc("37 8 * * *", func() {
 		if err := service.CrawlProductList(db, 5919); err != nil {
 			log.Printf("ERROR: CrawlProductList, %v\n", err)
 		}
@@ -127,8 +128,24 @@ func startServer(ctx *cli.Context) error {
 		}
 		log.Println("DONE")
 	})
+	// Книги 7954
+	c.AddFunc("01 18 * * *", func() {
+		if err := service.CrawlProductList(db, 7954); err != nil {
+			log.Printf("ERROR: CrawlProductList, %v\n", err)
+		}
+
+		log.Println("INFO: Run crawl products")
+		if err := service.CrawlProducts(db, 7954); err != nil {
+			log.Printf("ERROR: CrawlProducts, %v\n", err)
+		}
+		log.Println("DONE")
+	})
 	// Бытовая техника
-	c.AddFunc("45 17 * * *", func() {
+	c.AddFunc("11 19 * * *", func() {
+		if err := service.CrawlCategories(db); err != nil {
+			log.Printf("ERROR: CrawlCategories, %v\n", err)
+
+		}
 		if err := service.CrawlProductList(db, 5087); err != nil {
 			log.Printf("ERROR: CrawlProductList, %v\n", err)
 		}
@@ -138,7 +155,7 @@ func startServer(ctx *cli.Context) error {
 		log.Println("DONE")
 	})
 	// Зоотовары
-	c.AddFunc("47 18 * * *", func() {
+	c.AddFunc("11 21 * * *", func() {
 		if err := service.CrawlProductList(db, 7827); err != nil {
 			log.Printf("ERROR: CrawlProductList, %v\n", err)
 		}
