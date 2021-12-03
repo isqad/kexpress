@@ -132,7 +132,7 @@ func loadProductList(db *sqlx.DB, sessID int64, page int, portalCategoryID int64
 	}
 	resp.Body.Close()
 
-	if len(pResponse.Payload.Products) == 0 {
+	if pResponse.Payload == nil || len(pResponse.Payload.Products) == 0 {
 		return nil
 	}
 	for _, p := range pResponse.Payload.Products {
