@@ -324,7 +324,7 @@ func parseProducts(db *sqlx.DB, categoryID int64, batchSize int64) error {
 					log.Printf("ERROR: Saving product failed: %v\n", err)
 					continue
 				}
-				timeout := rand.Intn(2)
+				timeout := rand.Intn(4)
 				log.Printf("Product %d has been parsed. Sleep %ds\n", product.ID, timeout)
 				time.Sleep(time.Duration(timeout) * time.Second)
 			}
