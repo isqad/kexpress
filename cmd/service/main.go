@@ -57,7 +57,7 @@ func startServer(ctx *cli.Context) error {
 
 	c := cron.New()
 	// Одежда
-	c.AddFunc("11 0 * * *", func() {
+	c.AddFunc("21 0 * * *", func() {
 		if err := service.CrawlProductList(db, 5235); err != nil {
 			log.Printf("ERROR: CrawlProductList, %v\n", err)
 		}

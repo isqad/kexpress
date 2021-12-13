@@ -16,7 +16,7 @@ const url = "https://api.kazanexpress.ru/api/v2/main/search/category?&categoryId
 
 // Category is category of products
 type Category struct {
-	ID            int64        `json:"-" db:"id"`
+	ID            int64        `json:"projectId,omitempty" db:"id"`
 	PortalID      int64        `json:"id" db:"portal_id"`
 	Title         string       `json:"title" db:"title"`
 	Parent        *Category    `json:"-" db:"-"`
@@ -26,6 +26,9 @@ type Category struct {
 	CreatedAt     time.Time    `json:"-" db:"created_at"`
 	UpdatedAt     time.Time    `json:"-" db:"updated_at"`
 	History       pgtype.JSONB `json:"-" db:"history"`
+	Proceeds      int          `json:"proceeds,omitempty" db:"proceeds,omitempty"`
+	AvgPrice      int          `json:"avgPrice,omitempty" db:"avg_price,omitempty"`
+	SellsCount    int          `json:"sellsCount,omitempty" db:"sells_count,omitempty"`
 }
 
 // CategoryResponse is response from server
@@ -39,9 +42,42 @@ type CategoryResponsePayload struct {
 	RootCategory *Category `json:"category"`
 }
 
+func AllCategories(db *sqlx.DB) ([]*Category, error) {
+	query := `WITH RECURSIVE t AS (
+				SELECT id,
+					   trim(both ' ' from title::text) AS title,
+					   products_amount,
+					   parent_id,
+					   portal_id,
+					   NOT EXISTS (SELECT NULL FROM categories cl WHERE categories.id = cl.parent_id) is_leaf FROM categories WHERE id IN (
+					     SELECT id FROM categories WHERE parent_id = 0
+					   )
+				UNION ALL
+				SELECT categories.id,
+					   (t.title || ' / ' || categories.title)::text,
+					   categories.products_amount,
+				       categories.parent_id,
+					   categories.portal_id,
+					   NOT EXISTS (SELECT NULL FROM categories cl WHERE categories.id = cl.parent_id) is_leaf FROM t JOIN categories ON t.id = categories.parent_id)
+			  SELECT
+				id,
+				title::text,
+				products_amount,
+				portal_id
+			  FROM t WHERE is_leaf
+			  ORDER BY products_amount DESC`
+	leaves := []*Category{}
+	err := db.Select(&leaves, query)
+	if err != nil {
+		return nil, err
+	}
+
+	return leaves, nil
+}
+
 // RootCategories returns all root categories
 func RootCategories(db *sqlx.DB) ([]*Category, error) {
-	query := `SELECT * FROM categories WHERE parent_id = 0`
+	query := `SELECT * FROM categories WHERE parent_id = 0 ORDER BY products_amount DESC`
 	roots := []*Category{}
 	err := db.Select(&roots, query)
 	if err != nil {
@@ -60,22 +96,33 @@ func findCategory(db *sqlx.DB, ID int64) (*Category, error) {
 }
 
 // CategoryLeaves fetches leaves
-func categoryLeaves(db *sqlx.DB, rootCategoryID int64) ([]*Category, error) {
+func CategoryLeaves(db *sqlx.DB, rootCategoryID int64) ([]*Category, error) {
 	query := `WITH RECURSIVE t AS (
 				SELECT id,
-				       title,
+					   trim(both ' ' from title::text) AS title,
 					   products_amount,
 					   parent_id,
 					   portal_id,
 					   NOT EXISTS (SELECT NULL FROM categories cl WHERE categories.id = cl.parent_id) is_leaf FROM categories WHERE id = $1
 				UNION ALL
 				SELECT categories.id,
-				       categories.title,
+					   ((CASE WHEN t.parent_id = 0
+					     THEN ''
+						 ELSE (t.title::text || ' / ')
+						 END) || categories.title)::text AS title,
 					   categories.products_amount,
 				       categories.parent_id,
 					   categories.portal_id,
-					   NOT EXISTS (SELECT NULL FROM categories cl WHERE categories.id = cl.parent_id) is_leaf FROM t JOIN categories ON t.id = categories.parent_id)
-			  SELECT id, title, products_amount, portal_id FROM t WHERE is_leaf ORDER BY products_amount`
+					   NOT EXISTS (SELECT NULL FROM categories cl WHERE categories.id = cl.parent_id) is_leaf FROM t JOIN categories ON t.id = categories.parent_id
+			  )
+			  SELECT
+				id,
+				title::text,
+				products_amount,
+				portal_id
+			  FROM t WHERE is_leaf
+
+			  ORDER BY products_amount DESC`
 	leaves := []*Category{}
 	err := db.Select(&leaves, query, rootCategoryID)
 	if err != nil {

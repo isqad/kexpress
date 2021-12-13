@@ -3,6 +3,7 @@ module github.com/isqad/kexpress
 go 1.17
 
 require (
+	github.com/go-chi/chi/v5 v5.0.7
 	github.com/jackc/pgtype v1.9.1
 	github.com/jackc/pgx/v4 v4.14.1
 	github.com/jmoiron/sqlx v1.3.4

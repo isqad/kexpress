@@ -7,3 +7,4 @@ cmd/bin/*
 *.xlsx
 *.bak
 !.gitkeep
+web/static/js/node_modules/

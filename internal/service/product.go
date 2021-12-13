@@ -215,7 +215,7 @@ type parseError struct {
 func CrawlProducts(db *sqlx.DB, rootCategoryID int64) error {
 	var wg sync.WaitGroup
 
-	leaves, err := categoryLeaves(db, rootCategoryID)
+	leaves, err := CategoryLeaves(db, rootCategoryID)
 	if err != nil {
 		return err
 	}

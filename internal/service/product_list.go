@@ -68,7 +68,7 @@ func CrawlProductList(db *sqlx.DB, rootCategoryID int64) error {
 
 	dataCh := make(chan *Category, workerPoolSize)
 
-	leaves, err := categoryLeaves(db, rootCategoryID)
+	leaves, err := CategoryLeaves(db, rootCategoryID)
 	if err != nil {
 		return err
 	}
