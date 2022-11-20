@@ -6,7 +6,7 @@ require (
 	github.com/go-chi/chi/v5 v5.0.7
 	github.com/jackc/pgtype v1.9.1
 	github.com/jackc/pgx/v4 v4.14.1
-	github.com/jmoiron/sqlx v1.3.4
+	github.com/jmoiron/sqlx v1.3.5
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/urfave/cli/v2 v2.3.0
 )
